@@ -20,8 +20,20 @@ When loading the data we were presented with an unwanted column which we have dr
 
 Under the if __name__ == '__main__' we load the file clean it using the above functon and then save it back into our folder.
 
+Milestone 2
+
 We also created a function called 'load_airbnb' which takes in the label we want to predict. We loaded the cleaned tabular data and casted the 'guests' and 'bedrooms' columns to float to use in our features.
 This function returns a tuple of the features and label and which we will use later for training our models. 
+
+We created a file called modelling.py which contains our code used for modelling different regression models and training it on the data. We started with importing the load_airbnb function outlined above. We started with establishing a baseline model to improve upon. We used SGDRegressor to build our model and computed the key measures of performance namely, RMSE (root mean squared error) and R^2 values. 
+
+Now the interesting part which we did rather than just using the traditional methods provided to us by SKLearn we built a custom model to tune the hyperparameters using GridSearch. So we wanted this function to take in a class, training set, validation set and a dictionary of hyperparameters which would be iterated over finding the best hyperparameter values. The function would return the best model, a dictionary of the best hyperparameters and a dictionary of the best perofrmance metrics. We started with empty dictionaries. Quite straightforward we iterated through the different values in the hyperparameters dictionary using a traditonal loop and fit the models with the corresponding parameters. The metrics were calculated and each model's RMSE was compared to the last. If the RMSE of the current model is lower than the previous model then the current model would replace the previous one in all relevant dictionaries. 
+
+We then moved on to using the SKLearn method GridSearchCV to get a more accurate representation of our data due to the error being way too high. This time quite straighforward again, we passed a parameter grid and set scoring to maximise the negative root mean squared error. The function then would take the parameter grid and perform a search for the best hyperparameter values. 
+
+We continued to apply this to various different models and saved the models in their respective folders. The models which were used are DecisionTreeRegressor, RandomForestRegressor and GradientBoostingRegressor. A function called find_the_best_model was made to extract the relevant model, hyperparameters and metrics; the metrics were then evaluated using the best RMSE score to find the best model. The model with the lowest RMSE score would be returned from the function alongside the model it is and the corresponding hyperparameter values.
+
+For further experiment and attemots to lower the error of the models we train would be to try other hyperparameter tuning methods besides just GridSearchCV. 
 
 
 
