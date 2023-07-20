@@ -43,7 +43,10 @@ def load_airbnb(label):
     df_numerical = df[numerical_columns]
 
     labels = df[label]
-    features = df_numerical.drop(columns=[label])
+    if label in df_numerical.columns:
+        features = df_numerical.drop(columns=[label])
+    else:
+        features = df_numerical
     return features, labels
 
 if __name__ == '__main__':
@@ -52,4 +55,3 @@ if __name__ == '__main__':
     df = clean_tabular_data(df)
     df.to_csv('airbnb-property-listings/tabular_data/clean_tabular_data.csv', index=False)
 
-    
