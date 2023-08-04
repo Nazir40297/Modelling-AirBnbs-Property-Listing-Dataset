@@ -38,6 +38,7 @@ def clean_tabular_data(df):
 def load_airbnb(label):
     df = pd.read_csv('airbnb-property-listings/tabular_data/clean_tabular_data.csv')
     df['guests'] = df['guests'].astype(float)
+    df['Price_Night'] = df['Price_Night'].astype(float)
     df['bedrooms'] = df['bedrooms'].astype(float)
     numerical_columns = df.select_dtypes(include=[int, float]).columns.tolist()
     df_numerical = df[numerical_columns]

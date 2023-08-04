@@ -1,4 +1,6 @@
 import pandas as pd
+import torch
+import torch.nn as nn
 from sklearn.linear_model import SGDRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error as MSE, r2_score, accuracy_score, precision_score, recall_score, f1_score
@@ -7,11 +9,16 @@ from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.ensemble import GradientBoostingRegressor, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
-import numpy as np 
+from torch.utils.data import Dataset
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+import numpy as np
 import joblib
 import json
 import os
 from tabular_data import load_airbnb
+
+writer = SummaryWriter()
 
 def custom_tune_regression_model_hyperparameters(model_class, X_train, y_train, X_val, y_val, hyperparameters):
     best_model = None
@@ -245,15 +252,75 @@ def tune_classification_model_hyperparameters(model, X_train, X_val, y_train, y_
     }
     return best_model, best_hyperparameters, perf_metrics
 
+class AirbnbNightlyPriceRegressionDataset(Dataset):
+    def __init__(self, features, labels):
+        super().__init__()
+        self.features = torch.tensor(features.values, dtype = torch.float32)
+        self.labels = torch.tensor(labels.values, dtype = torch.float32).reshape(-1,1)
+    
+    def __len__(self):
+        return len(self.features)
+    
+    def __getitem__(self, idx):
+        return self.features[idx], self.labels[idx]
+
+class NN(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size):
+        super(NN, self).__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.output_size = output_size
+
+        layers = []
+        prev_size = input_size
+        for size in self.hidden_size:
+            layers.append(nn.Linear(prev_size, size))
+            layers.append(nn.ReLU())
+            prev_size = size
+        layers.append(nn.Linear(prev_size, self.output_size))
+        self.layers = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.layers(x)
+
+def train(model, train_dataloader, validation_dataloader, num_epochs):
+    criterion = nn.MSELoss()
+    optimiser = torch.optim.Adam(model.parameters(), lr = 0.001)
+
+    for epoch in range(num_epochs):
+        model.train()
+        for batch_features, batch_labels in train_dataloader:
+            optimiser.zero_grad()
+
+            output = model(batch_features)
+            loss = criterion(output, batch_labels)
+
+            loss.backward()
+            optimiser.step()
+
+            writer.add_scalar('Loss/train', loss.item(), epoch)
+
+        model.eval()
+        with torch.no_grad():
+            for val_features, val_labels in validation_dataloader:
+                val_output = model(val_features)
+                val_loss = criterion(val_output, val_labels)
+                validation_loss = val_loss.item()
+            
+                writer.add_scalar('Loss/validation', validation_loss, epoch)
+    
+    writer.close()
+
+
 if __name__ == '__main__':
     # # Loads the data from the load_airbnb function and splits it into features and labels
-    # X, y = load_airbnb('Price_Night')
+    X, y = load_airbnb('Price_Night')
 
     # # Splits the data into traning and testing sets
-    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2,random_state = 42)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2,random_state = 42)
 
     # # Split data into training and validation sets
-    # X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state = 42)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state = 42)
 
     # # Evaluates all models and saves the model, hyperparameters and metrics in their respective folders
     # evaluate_all_models()
@@ -265,13 +332,13 @@ if __name__ == '__main__':
     # print(best_model)
 
     # Loads the data from the load_airbnb function and splits it into features and labels
-    X,y = load_airbnb('Category')
+    # X,y = load_airbnb('Category')
 
     # Splits the data into training and testing sets
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2, random_state = 42)
+    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2, random_state = 42)
 
     # Split data into training and validation sets
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size = 0.2, random_state = 42)
+    # X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size = 0.2, random_state = 42)
 
     # model = LogisticRegression()
     # model.fit(X_train, y_train)
@@ -297,5 +364,29 @@ if __name__ == '__main__':
     # print("Test Recall:", test_recall)
     # print("Test F1 Score:", test_f1)
 
-    bestclassmodel = find_best_model('models', 'classification')
-    print(bestclassmodel)
+    # # Evaluates all classification models
+    # evaluate_all_class_models()
+
+    # # Finds best classification model based on Validation Accuracy
+    # bestclassmodel = find_best_model('models', 'classification')
+
+    # # Prints the best classification model
+    # print(bestclassmodel)
+
+    # Create the datasets
+    train_dataset = AirbnbNightlyPriceRegressionDataset(X_train, y_train)
+    validation_dataset = AirbnbNightlyPriceRegressionDataset(X_val, y_val)
+    test_dataset = AirbnbNightlyPriceRegressionDataset(X_test, y_test)
+
+    # Create dataloaders
+    train_dataloader = DataLoader(train_dataset, batch_size = 64, shuffle = True)
+    validation_dataloader = DataLoader(validation_dataset, batch_size = 64, shuffle = True)
+    test_dataloader = DataLoader(test_dataset, batch_size = 64, shuffle = True)
+
+    input_size = 11
+    hidden_size = [128, 64]
+    output_size = 1
+    model = NN(input_size, hidden_size, output_size)
+
+    num_epochs = 20
+    train(model, train_dataloader, validation_dataloader, num_epochs = num_epochs)
