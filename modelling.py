@@ -16,6 +16,9 @@ import numpy as np
 import joblib
 import json
 import os
+import yaml
+import datetime
+import time
 from tabular_data import load_airbnb
 
 writer = SummaryWriter()
@@ -265,31 +268,34 @@ class AirbnbNightlyPriceRegressionDataset(Dataset):
         return self.features[idx], self.labels[idx]
 
 class NN(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
+    def __init__(self, input_size, config):
         super(NN, self).__init__()
         self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.output_size = output_size
+        self.config = config
 
         layers = []
         prev_size = input_size
-        for size in self.hidden_size:
+        for size in self.config['hidden_layer_width']:
             layers.append(nn.Linear(prev_size, size))
             layers.append(nn.ReLU())
             prev_size = size
-        layers.append(nn.Linear(prev_size, self.output_size))
+        layers.append(nn.Linear(prev_size, 1))
         self.layers = nn.Sequential(*layers)
 
     def forward(self, x):
         return self.layers(x)
 
-def train(model, train_dataloader, validation_dataloader, num_epochs):
+def train(model, train_dataloader, validation_dataloader, num_epochs, config, device):
     criterion = nn.MSELoss()
-    optimiser = torch.optim.Adam(model.parameters(), lr = 0.001)
+    optimiser = torch.optim.__dict__[config['optimiser']](model.parameters(), lr = config['learning_rate'])
+
+    start_time = time.time()
 
     for epoch in range(num_epochs):
         model.train()
         for batch_features, batch_labels in train_dataloader:
+            batch_features = batch_features.to(device)
+            batch_labels = batch_labels.to(device)
             optimiser.zero_grad()
 
             output = model(batch_features)
@@ -309,17 +315,140 @@ def train(model, train_dataloader, validation_dataloader, num_epochs):
             
                 writer.add_scalar('Loss/validation', validation_loss, epoch)
     
+    end_time = time.time()
+    training_duration = end_time - start_time
+
+    model.eval()
+    start_time2 = time.time()
+
+    for batch_features, batch_labels in validation_dataloader:
+        with torch.no_grad():
+            output = model(batch_features)
+    
+    end_time2 = time.time()
+    inference_duration = end_time2 - start_time2
+    inference_latency = inference_duration / (len(validation_dataloader) * len(batch_features))
+
     writer.close()
 
+    return model, training_duration, inference_latency
+
+def get_nn_config(config_path):
+    with open(config_path, 'r') as config_file:
+        config = yaml.safe_load(config_file)
+    return config
+
+def save_pytorch_model(model, hyperparameters, metrics, folder = 'neural_networks/regression'):
+    if isinstance(model, torch.nn.Module):
+        current_time = datetime.datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
+        folder = os.path.join(folder, current_time)
+        os.makedirs(folder, exist_ok = True)
+
+        model_path = os.path.join(folder, 'model.pt')
+        torch.save(model.state_dict(), model_path)
+
+    hyperparameters_path = os.path.join(folder, 'hyperparameters.json')
+    with open(hyperparameters_path, 'w') as f:
+        json.dump(hyperparameters, f)
+    
+    metrics_path = os.path.join(folder, 'metrics.json')
+    with open(metrics_path, 'w') as f:
+        json.dump(metrics, f)
+
+def evaluate_pytorch_model(model, dataloader, device):
+    model.eval()
+    y_true = []
+    y_pred = []
+
+    with torch.no_grad():
+        for batch_features, batch_labels in dataloader:
+            batch_features = batch_features.to(device)
+            batch_labels = batch_labels.to(device)
+
+            predictions = model(batch_features)
+            y_true.extend(batch_labels.cpu().numpy())
+            y_pred.extend(predictions.cpu().numpy())
+    
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+
+    rmse = MSE(y_true, y_pred, squared = False)
+    r2 = r2_score(y_true, y_pred)
+
+    return rmse, r2
+
+def generate_nn_configs():
+    configs = []
+
+    hidden_layer_widths = [32, 64, 128]
+    depths = [1, 2, 3]
+    learning_rate = [0.001, 0.01, 0.1]
+
+    for width in hidden_layer_widths:
+        for depth in depths:
+            for lr in learning_rate:
+                config = {
+                    'optimiser' : 'Adam',
+                    'learning_rate' : lr,
+                    'hidden_layer_width' : [width] * depth
+                }
+                configs.append(config)
+    
+    return configs
+
+def find_best_nn(train_dataloader, validation_dataloader, num_epochs):
+    configs = generate_nn_configs()
+    best_model = None
+    best_metrics = None
+    best_hyperparameters = None
+    best_val_rmse = float('inf')
+
+    for idx, config in enumerate(configs):
+        print(f"Training model {idx + 1}/{len(configs)}...")
+
+        input_size = 11
+        model = NN(input_size, config)
+
+        trained_model, training_duration, inference_latency = train(model, train_dataloader, validation_dataloader, num_epochs = num_epochs, config = config, device = device)
+
+        train_rmse, train_r2 = evaluate_pytorch_model(trained_model, train_dataloader, device)
+        val_rmse, val_r2 = evaluate_pytorch_model(trained_model, validation_dataloader, device)
+        test_rmse, test_r2 = evaluate_pytorch_model(trained_model, test_dataloader, device)
+
+        if val_rmse < best_val_rmse:
+            best_val_rmse = val_rmse
+            best_model = trained_model
+            best_metrics = {
+                'RMSE' : {
+                    'train' : float(train_rmse),
+                    'validation' : float(val_rmse),
+                    'test' : float(test_rmse)
+                },
+                'R^2' : {
+                    'train' : float(train_r2),
+                    'validation' : float(val_r2),
+                    'test' : float(test_r2)
+                },
+                'training_duration' : float(training_duration),
+                'inference_latency' : float(inference_latency)
+            }
+            best_hyperparameters = config
+
+    save_pytorch_model(best_model, best_hyperparameters, best_metrics)
+
+    return best_model, best_hyperparameters, best_metrics
 
 if __name__ == '__main__':
-    # # Loads the data from the load_airbnb function and splits it into features and labels
+    # Specify the device
+    device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
+
+    # Loads the data from the load_airbnb function and splits it into features and labels
     X, y = load_airbnb('Price_Night')
 
-    # # Splits the data into traning and testing sets
+    # Splits the data into traning and testing sets
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2,random_state = 42)
 
-    # # Split data into training and validation sets
+    # Split data into training and validation sets
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state = 42)
 
     # # Evaluates all models and saves the model, hyperparameters and metrics in their respective folders
@@ -383,10 +512,36 @@ if __name__ == '__main__':
     validation_dataloader = DataLoader(validation_dataset, batch_size = 64, shuffle = True)
     test_dataloader = DataLoader(test_dataset, batch_size = 64, shuffle = True)
 
-    input_size = 11
-    hidden_size = [128, 64]
-    output_size = 1
-    model = NN(input_size, hidden_size, output_size)
+    # config = get_nn_config('nn_config.yaml')
+
+    # input_size = 11
+    # model = NN(input_size, config)
 
     num_epochs = 20
-    train(model, train_dataloader, validation_dataloader, num_epochs = num_epochs)
+    # trained_model, training_duration, inference_latency = train(model, train_dataloader, validation_dataloader, num_epochs = num_epochs, config = config, device = device)
+
+    # hyperparameters = config
+
+    # train_rmse, train_r2 = evaluate_pytorch_model(trained_model, train_dataloader, device)
+    # val_rmse, val_r2 = evaluate_pytorch_model(trained_model, validation_dataloader, device)
+    # test_rmse, test_r2 = evaluate_pytorch_model(trained_model, test_dataloader, device)
+
+    # metrics = {
+    #     'RMSE': {
+    #         'train' : float(train_rmse),
+    #         'validation' : float(val_rmse),
+    #         'test' : float(test_rmse)
+    #     },
+    #     'R^2' : {
+    #         'train' : float(train_r2),
+    #         'validation' : float(val_r2),
+    #         'test' : float(test_r2)
+    #     },
+    #     'training_duration' : float(training_duration),
+    #     'inference_latency' : float(inference_latency)
+    # }
+    
+    # save_pytorch_model(trained_model, hyperparameters, metrics)
+
+    best_model, best_metrics, best_hyperparameters = find_best_nn(train_dataloader, validation_dataloader, num_epochs)
+

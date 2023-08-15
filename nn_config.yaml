@@ -1,4 +1,4 @@
 optimiser: Adam
 learning_rate: 0.001
-hidden_layer_width: [64, 128]
+hidden_layer_width: [50, 50]
 depth: 2
