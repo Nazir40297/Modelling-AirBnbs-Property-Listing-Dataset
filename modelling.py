@@ -4,7 +4,7 @@ import torch.nn as nn
 from sklearn.linear_model import SGDRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error as MSE, r2_score, accuracy_score, precision_score, recall_score, f1_score
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, StratifiedKFold, StratifiedShuffleSplit
 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.ensemble import GradientBoostingRegressor, GradientBoostingClassifier
@@ -170,7 +170,7 @@ def evaluate_all_class_models():
     'max_depth': [None, 5, 10],
     'min_samples_split': [2, 5, 10],
     'min_samples_leaf': [1, 2, 4],
-    'max_features': ['auto', 'sqrt'],
+    'max_features': ['sqrt'],
     'class_weight': [None, 'balanced'],
     'random_state': [42]
     }
@@ -195,6 +195,57 @@ def evaluate_all_class_models():
     bst4 = tune_classification_model_hyperparameters(gradient_boosting_class, X_train, X_val, y_train, y_val, hyp3)
 
     save_model(bst4, 'gradient_boosting_classifier', 'models/classification/')
+
+def evaluate_all_class_models_strat():
+    m1 = DecisionTreeClassifier(class_weight = 'balanced')
+
+    hyp = {
+    'criterion': ['gini', 'entropy'],
+    'max_depth': [None, 5, 10],
+    'min_samples_split': [2, 5, 10],
+    'min_samples_leaf': [1, 2, 4],
+    'max_features': [None, 'sqrt', 'log2'],
+    'class_weight': [None, 'balanced'],
+    'random_state': [42]
+    }
+
+    bst2 = tune_classification_model_hyperparameters_strat(m1, X_train, X_val, y_train_comb, y_val_comb, hyp)
+
+    save_model(bst2, 'decision_tree_classifier_bedroom', 'models/classification/')
+
+    random_forest_class = RandomForestClassifier(class_weight = 'balanced')
+
+    hyp2 = {
+    'n_estimators': [100, 200, 500],
+    'criterion': ['gini', 'entropy'],
+    'max_depth': [None, 5, 10],
+    'min_samples_split': [2, 5, 10],
+    'min_samples_leaf': [1, 2, 4],
+    'max_features': ['sqrt'],
+    'class_weight': [None, 'balanced'],
+    'random_state': [42]
+    }
+
+    bst3 = tune_classification_model_hyperparameters_strat(random_forest_class, X_train, X_val, y_train_comb, y_val_comb, hyp2)
+
+    save_model(bst3, 'random_forest_classifier_bedroom', 'models/classification/')
+
+    gradient_boosting_class = GradientBoostingClassifier()
+
+    hyp3 = {
+    'n_estimators': [50, 100, 200],
+    'learning_rate': [0.01, 0.1, 0.2],
+    'max_depth': [3, 5, 7],
+    'min_samples_split': [2, 5, 10],
+    'min_samples_leaf': [1, 2, 4],
+    'max_features': ['sqrt'],
+    'subsample': [0.8, 1.0],
+    'random_state': [42]
+    }
+
+    bst4 = tune_classification_model_hyperparameters_strat(gradient_boosting_class, X_train, X_val, y_train_comb, y_val_comb, hyp3)
+
+    save_model(bst4, 'gradient_boosting_classifier_bedroom', 'models/classification/')
 
 
 def find_best_model(main, task_folder):
@@ -244,9 +295,9 @@ def tune_classification_model_hyperparameters(model, X_train, X_val, y_train, y_
 
     y_val_pred = best_model.predict(X_val)
     validation_accuracy = accuracy_score(y_val, y_val_pred)
-    precision = precision_score(y_val, y_val_pred, average = 'macro')
-    recall = recall_score(y_val, y_val_pred, average = 'macro')
-    f1 = f1_score(y_val, y_val_pred, average = 'macro')
+    precision = precision_score(y_val, y_val_pred, average = 'macro', zero_division=1)
+    recall = recall_score(y_val, y_val_pred, average = 'macro', zero_division=1)
+    f1 = f1_score(y_val, y_val_pred, average = 'macro', zero_division=1)
     perf_metrics = {
         'Validation_Accuracy' : validation_accuracy,
         'Precision Score' : precision,
@@ -255,6 +306,27 @@ def tune_classification_model_hyperparameters(model, X_train, X_val, y_train, y_
     }
     return best_model, best_hyperparameters, perf_metrics
 
+def tune_classification_model_hyperparameters_strat(model, X_train, X_val, y_train, y_val, hyperparameters):
+    cv = StratifiedKFold(n_splits = 4, shuffle = True, random_state = 42)
+
+    grid_search = GridSearchCV(model, hyperparameters, cv = cv)
+    grid_search.fit(X_train, y_train)
+
+    best_model = grid_search.best_estimator_
+    best_hyperparameters = grid_search.best_params_
+
+    y_val_pred = best_model.predict(X_val)
+    validation_accuracy = accuracy_score(y_val, y_val_pred)
+    precision = precision_score(y_val, y_val_pred, average = 'macro', zero_division=1)
+    recall = recall_score(y_val, y_val_pred, average = 'macro', zero_division=1)
+    f1 = f1_score(y_val, y_val_pred, average = 'macro', zero_division=1)
+    perf_metrics = {
+        'Validation_Accuracy' : validation_accuracy,
+        'Precision Score' : precision,
+        'Recall Score' : recall,
+        'F1 Score' : f1
+    }
+    return best_model, best_hyperparameters, perf_metrics
 class AirbnbNightlyPriceRegressionDataset(Dataset):
     def __init__(self, features, labels):
         super().__init__()
@@ -338,7 +410,7 @@ def get_nn_config(config_path):
         config = yaml.safe_load(config_file)
     return config
 
-def save_pytorch_model(model, hyperparameters, metrics, folder = 'neural_networks/regression'):
+def save_pytorch_model(model, hyperparameters, metrics, folder):
     if isinstance(model, torch.nn.Module):
         current_time = datetime.datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
         folder = os.path.join(folder, current_time)
@@ -381,8 +453,8 @@ def generate_nn_configs():
     configs = []
 
     hidden_layer_widths = [32, 64, 128]
-    depths = [1, 2, 3]
-    learning_rate = [0.001, 0.01, 0.1]
+    depths = [1, 2, 3, 4]
+    learning_rate = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5]
 
     for width in hidden_layer_widths:
         for depth in depths:
@@ -396,7 +468,7 @@ def generate_nn_configs():
     
     return configs
 
-def find_best_nn(train_dataloader, validation_dataloader, num_epochs):
+def find_best_nn(train_dataloader, validation_dataloader, num_epochs, folder):
     configs = generate_nn_configs()
     best_model = None
     best_metrics = None
@@ -434,22 +506,28 @@ def find_best_nn(train_dataloader, validation_dataloader, num_epochs):
             }
             best_hyperparameters = config
 
-    save_pytorch_model(best_model, best_hyperparameters, best_metrics)
+    save_pytorch_model(best_model, best_hyperparameters, best_metrics, folder)
 
     return best_model, best_hyperparameters, best_metrics
+
+def combine_classes(y):
+    y_combined = y.copy()
+    y_combined[y_combined.isin([6, 7, 8, 10, 5])] = 4
+
+    return y_combined
 
 if __name__ == '__main__':
     # Specify the device
     device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
 
-    # Loads the data from the load_airbnb function and splits it into features and labels
-    X, y = load_airbnb('Price_Night')
+    # # Loads the data from the load_airbnb function and splits it into features and labels
+    # X, y = load_airbnb('Price_Night')
 
-    # Splits the data into traning and testing sets
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2,random_state = 42)
+    # # Splits the data into traning and testing sets
+    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2,random_state = 42)
 
-    # Split data into training and validation sets
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state = 42)
+    # # Split data into training and validation sets
+    # X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state = 42)
 
     # # Evaluates all models and saves the model, hyperparameters and metrics in their respective folders
     # evaluate_all_models()
@@ -502,22 +580,22 @@ if __name__ == '__main__':
     # # Prints the best classification model
     # print(bestclassmodel)
 
-    # Create the datasets
-    train_dataset = AirbnbNightlyPriceRegressionDataset(X_train, y_train)
-    validation_dataset = AirbnbNightlyPriceRegressionDataset(X_val, y_val)
-    test_dataset = AirbnbNightlyPriceRegressionDataset(X_test, y_test)
+    # # Create the datasets
+    # train_dataset = AirbnbNightlyPriceRegressionDataset(X_train, y_train)
+    # validation_dataset = AirbnbNightlyPriceRegressionDataset(X_val, y_val)
+    # test_dataset = AirbnbNightlyPriceRegressionDataset(X_test, y_test)
 
-    # Create dataloaders
-    train_dataloader = DataLoader(train_dataset, batch_size = 64, shuffle = True)
-    validation_dataloader = DataLoader(validation_dataset, batch_size = 64, shuffle = True)
-    test_dataloader = DataLoader(test_dataset, batch_size = 64, shuffle = True)
+    # # Create dataloaders
+    # train_dataloader = DataLoader(train_dataset, batch_size = 64, shuffle = True)
+    # validation_dataloader = DataLoader(validation_dataset, batch_size = 64, shuffle = True)
+    # test_dataloader = DataLoader(test_dataset, batch_size = 64, shuffle = True)
 
     # config = get_nn_config('nn_config.yaml')
 
     # input_size = 11
     # model = NN(input_size, config)
 
-    num_epochs = 20
+    # num_epochs = 20
     # trained_model, training_duration, inference_latency = train(model, train_dataloader, validation_dataloader, num_epochs = num_epochs, config = config, device = device)
 
     # hyperparameters = config
@@ -543,5 +621,60 @@ if __name__ == '__main__':
     
     # save_pytorch_model(trained_model, hyperparameters, metrics)
 
-    best_model, best_metrics, best_hyperparameters = find_best_nn(train_dataloader, validation_dataloader, num_epochs)
+    # best_model, best_metrics, best_hyperparameters = find_best_nn(train_dataloader, validation_dataloader, num_epochs)
 
+    X, y = load_airbnb('bedrooms')
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2,random_state = 42)
+
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state = 42)
+
+    y_train_comb = combine_classes(y_train)
+    y_val_comb = combine_classes(y_val)
+    y_test_comb = combine_classes(y_test)
+
+    model = LogisticRegression()
+    model.fit(X_train, y_train_comb)
+
+    y_train_pred = model.predict(X_train)
+    train_accuracy = accuracy_score(y_train_comb, y_train_pred)
+    train_precision = precision_score(y_train, y_train_pred, average = 'macro', zero_division=1)
+    train_recall = recall_score(y_train, y_train_pred, average = 'macro', zero_division=1)
+    train_f1 = f1_score(y_train, y_train_pred, average = 'macro', zero_division=1)
+
+    y_test_pred = model.predict(X_test)
+    test_accuracy = accuracy_score(y_test_comb, y_test_pred)
+    test_precision = precision_score(y_test, y_test_pred, average='macro', zero_division=1)
+    test_recall = recall_score(y_test, y_test_pred, average='macro', zero_division=1)
+    test_f1 = f1_score(y_test, y_test_pred, average='macro', zero_division=1)
+
+    print("Training Accuracy:", train_accuracy)
+    print("Training Precision:", train_precision)
+    print("Training Recall:", train_recall)
+    print("Training F1 Score:", train_f1)
+    print("Test Accuracy:", test_accuracy)
+    print("Test Precision:", test_precision)
+    print("Test Recall:", test_recall)
+    print("Test F1 Score:", test_f1)
+
+    # evaluate_all_class_models_strat()
+
+    # Assuming y_train is a pandas Series or DataFrame column containing class labels
+    # class_distribution_train = y_train_comb.value_counts()
+    # class_distribution_val = y_val_comb.value_counts()
+    # class_distribution_test = y_test_comb.value_counts()
+
+    # print("Class distribution in training set:\n", class_distribution_train)
+    # print("Class distribution in validation set:\n", class_distribution_val)
+    # print("Class distribution in test set:\n", class_distribution_test)
+
+    train_dataset = AirbnbNightlyPriceRegressionDataset(X_train, y_train_comb)
+    validation_dataset = AirbnbNightlyPriceRegressionDataset(X_val, y_val_comb)
+    test_dataset = AirbnbNightlyPriceRegressionDataset(X_test, y_test_comb)
+
+    train_dataloader = DataLoader(train_dataset, batch_size = 64, shuffle = True)
+    validation_dataloader = DataLoader(validation_dataset, batch_size = 64, shuffle = True)
+    test_dataloader = DataLoader(test_dataset, batch_size = 64, shuffle = True)
+
+    best_model, best_metrics, best_hyperparameters = find_best_nn(train_dataloader, validation_dataloader, num_epochs=20, folder = 'neural_networks/regression_beds')
+    
