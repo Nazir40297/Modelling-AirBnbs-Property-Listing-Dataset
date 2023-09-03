@@ -1,28 +1,22 @@
-import torch
-import torch.nn as nn
-from sklearn.linear_model import SGDRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error as MSE, r2_score, accuracy_score, precision_score, recall_score, f1_score
-from sklearn.model_selection import GridSearchCV, StratifiedKFold, StratifiedShuffleSplit
-from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-from sklearn.ensemble import GradientBoostingRegressor, GradientBoostingClassifier
-from sklearn.linear_model import LogisticRegression
-from torch.utils.data import Dataset
-from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
-import numpy as np
-import joblib
+import datetime
 import json
 import os
-import yaml
-import datetime
 import time
-from tabular_data import load_airbnb
+
+import numpy as np
+import torch
+import torch.nn as nn
+import yaml
+from sklearn.metrics import mean_squared_error as MSE
+from sklearn.metrics import r2_score
+from torch.utils.data import DataLoader, Dataset
+from torch.utils.tensorboard import SummaryWriter
+
 from modelling_classification import combine_classes
+from modelling_regression import split_data
+from tabular_data import load_airbnb
 
 writer = SummaryWriter()
-
 
 class AirbnbNightlyPriceRegressionDataset(Dataset):
     '''This is a custom PyTorch Dataset class. 
@@ -231,11 +225,8 @@ if __name__ == '__main__':
     # Loads the data from the load_airbnb function and splits it into features and labels
     X, y = load_airbnb('Price_Night')
 
-    # Splits the data into traning and testing sets
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2,random_state = 42)
-
-    # Split data into training and validation sets
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state = 42)
+     # Split the data into training, validation and test sets
+    X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y)
 
     # Create the datasets
     train_dataset = AirbnbNightlyPriceRegressionDataset(X_train, y_train)
@@ -282,22 +273,12 @@ if __name__ == '__main__':
 
     X, y = load_airbnb('bedrooms')
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2,random_state = 42)
-
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state = 42)
+    # Split the data into training, validation and test sets
+    X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y)
 
     y_train_comb = combine_classes(y_train)
     y_val_comb = combine_classes(y_val)
     y_test_comb = combine_classes(y_test)
-
-    # Assuming y_train is a pandas Series or DataFrame column containing class labels
-    # class_distribution_train = y_train_comb.value_counts()
-    # class_distribution_val = y_val_comb.value_counts()
-    # class_distribution_test = y_test_comb.value_counts()
-
-    # print("Class distribution in training set:\n", class_distribution_train)
-    # print("Class distribution in validation set:\n", class_distribution_val)
-    # print("Class distribution in test set:\n", class_distribution_test)
 
     train_dataset = AirbnbNightlyPriceRegressionDataset(X_train, y_train_comb)
     validation_dataset = AirbnbNightlyPriceRegressionDataset(X_val, y_val_comb)
