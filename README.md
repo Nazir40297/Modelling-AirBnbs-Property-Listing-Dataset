@@ -205,39 +205,3 @@ Training duration calculation: after the training loop, the end time is recorded
 Model evalution mode: the model is set to evaluation mode again before inference latency calculation. 
 Inference latency calculation: a new timer is started and then the validation data is iterated through again. However, this time only measures the time taken for model inference only. After the inference loop the end time is recorded. The total inference duration is calculated as a difference between the two times. The inference latency is calculated by dividing the total inference duration by the product of the number of validation batches by the number of samples in each batch.
 
-Below are descriptions of the functions used:
-
-custom_tune_regression_model_hyperparameters: This function performs a custom hyperparameter tuning for a regression model. It takes as input the model class, training and validation data, and a list of hyperparameters. It trains the model with each set of hyperparameters, calculates RMSE and R^2 on the validation set, and returns the best model, its hyperparameters, and the best performance metrics.
-
-tune_regression_model_hyperparameters: This function uses GridSearchCV to perform hyperparameter tuning for a regression model. It takes the base model, training data, validation data, a parameter grid, and a scoring metric. It uses cross-validation to search through the parameter grid, returns the best model, its hyperparameters, and performance metrics.
-
-save_model: This function saves the trained model, its hyperparameters, and performance metrics to files. It takes the results from hyperparameter tuning, the model name, and a folder path. It creates a subfolder with the model name and saves the model, hyperparameters, and metrics as JSON files.
-
-evaluate_all_models: This function evaluates various regression models using hyperparameter tuning. It evaluates models like SGDRegressor, DecisionTreeRegressor, RandomForestRegressor, and GradientBoostingRegressor. It calls the hyperparameter tuning functions for each model and saves the best models with their details.
-
-evaluate_all_class_models: This function evaluates various classification models using hyperparameter tuning. It evaluates models like DecisionTreeClassifier, RandomForestClassifier, and GradientBoostingClassifier. It uses accuracy, precision, recall, and F1-score for evaluation.
-
-evaluate_all_class_models_strat: This function is similar to the previous one but uses stratified k-fold cross-validation for classification models.
-
-find_best_model: This function searches for the best model within a directory structure. It loads each model, hyperparameters, and metrics and compares their performance to determine the best one.
-
-AirbnbNightlyPriceRegressionDataset: This is a custom PyTorch Dataset class. It takes features and labels as inputs, converts them to PyTorch tensors, and provides methods for data loading.
-
-NN: This is a custom neural network class defined using PyTorch's nn.Module. It's used for creating neural network models with a specified number of hidden layers and units.
-
-train: This function handles the training of a PyTorch model. It takes the model, training and validation dataloaders, number of epochs, and training configurations. It calculates the loss, backpropagates, and updates the weights during training.
-
-get_nn_config: This function loads a neural network configuration from a YAML file. It's used to get the configuration parameters for the neural network model.
-
-save_pytorch_model: This function saves a PyTorch model, its hyperparameters, and metrics to a specified folder. If the model is an instance of nn.Module, its state dictionary is saved.
-
-evaluate_pytorch_model: This function evaluates a PyTorch model using a specified dataloader. It calculates RMSE and R^2 for regression tasks.
-
-generate_nn_configs: This function generates a list of different neural network configurations. It iterates over different combinations of hidden layer widths, depths, and learning rates.
-
-find_best_nn: This function performs an exhaustive search for the best neural network configuration. It trains models with different configurations, evaluates them, and selects the one with the best performance.
-
-combine_classes: This function is used to combine classes in classification tasks. It merges multiple classes into a single class, typically used for simplifying classification tasks.
-
-These functions collectively build a pipeline for hyperparameter tuning, training, and evaluating both regression and classification models using various machine learning algorithms and neural networks.
-
